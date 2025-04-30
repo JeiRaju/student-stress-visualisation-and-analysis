@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(scales)
 library(ggplot2)
+library(janitor)
 ```
 
 # Load Dataset
@@ -18,8 +19,25 @@ library(ggplot2)
 data <- read_csv("../data/Student_Mental_Stress_and_Coping_Mechanisms.csv")
 
 # Clean column names for ease of use
-colnames(data) <- make.names(colnames(data))
+data <- clean_names(data)
 ```
+
+```{r}
+# Check for missing values
+colSums(is.na(data))
+
+# Summary of numeric variables
+summary(select(data, where(is.numeric)))
+
+# Check for implausible values
+data %>%
+  filter(academic_performance_gpa > 4 |
+         study_hours_per_week > 100 |
+         social_media_usage_hours_per_day > 24 |
+         sleep_duration_hours_per_night > 24 |
+         physical_exercise_hours_per_week > 100)
+```
+
 
 # Feature Engineering
 
@@ -28,9 +46,9 @@ colnames(data) <- make.names(colnames(data))
 ```{r}
 data <- data %>%
   mutate(
-    weekly_social_media_hours = Social.Media.Usage..Hours.per.day. * 7,
-    weekly_sleep_hours = Sleep.Duration..Hours.per.night. * 7,
-    weekly_exercise_hours = Physical.Exercise..Hours.per.week.
+    weekly_social_media_hours = social_media_usage_hours_per_day * 7,
+    weekly_sleep_hours = sleep_duration_hours_per_night * 7,
+    weekly_exercise_hours = physical_exercise_hours_per_week
   )
 ```
 
@@ -39,7 +57,7 @@ data <- data %>%
 ```{r}
 data <- data %>%
   mutate(
-    academic_load_index = Academic.Performance..GPA. * Study.Hours.Per.Week,
+    academic_load_index = academic_performance_gpa * study_hours_per_week,
     academic_load_index_scaled = rescale(academic_load_index, to = c(0, 1))
   )
 ```
@@ -50,9 +68,9 @@ data <- data %>%
 data <- data %>%
   mutate(
     stress_category = case_when(
-      Mental.Stress.Level <= 3 ~ "Low",
-      Mental.Stress.Level <= 6 ~ "Moderate",
-      Mental.Stress.Level >= 7 ~ "High",
+      mental_stress_level <= 3 ~ "Low",
+      mental_stress_level <= 6 ~ "Moderate",
+      mental_stress_level >= 7 ~ "High",
       TRUE ~ NA_character_
     )
   )
@@ -63,9 +81,9 @@ data <- data %>%
 ```{r}
 data <- data %>%
   mutate(
-    healthy_score = as.integer(Sleep.Duration..Hours.per.night. >= 7) +
-                    as.integer(Physical.Exercise..Hours.per.week. >= 3) +
-                    as.integer(Diet.Quality >= 3)
+    healthy_score = as.integer(sleep_duration_hours_per_night >= 7) +
+                    as.integer(physical_exercise_hours_per_week >= 3) +
+                    as.integer(diet_quality >= 3)
   )
 ```
 
@@ -74,13 +92,13 @@ data <- data %>%
 ```{r}
 data <- data %>%
   mutate(coping_type = case_when(
-    str_detect(Stress.Coping.Mechanisms, regex("meditation|breathing|yoga|alone", ignore_case = TRUE)) ~ "Emotional",
-    str_detect(Stress.Coping.Mechanisms, regex("talking|family|friends", ignore_case = TRUE)) ~ "Social",
-    str_detect(Stress.Coping.Mechanisms, regex("reading|drawing|writing", ignore_case = TRUE)) ~ "Creative",
-    str_detect(Stress.Coping.Mechanisms, regex("music|watching sports", ignore_case = TRUE)) ~ "Relaxation",
-    str_detect(Stress.Coping.Mechanisms, regex("travelling|nature", ignore_case = TRUE)) ~ "Adventure",
-    str_detect(Stress.Coping.Mechanisms, regex("social media", ignore_case = TRUE)) ~ "Distraction",
-    str_detect(Stress.Coping.Mechanisms, regex("exercise", ignore_case = TRUE)) ~ "Physical",
+    str_detect(stress_coping_mechanisms, regex("meditation|breathing|yoga|alone", ignore_case = TRUE)) ~ "Emotional",
+    str_detect(stress_coping_mechanisms, regex("talking|family|friends", ignore_case = TRUE)) ~ "Social",
+    str_detect(stress_coping_mechanisms, regex("reading|drawing|writing", ignore_case = TRUE)) ~ "Creative",
+    str_detect(stress_coping_mechanisms, regex("music|watching sports", ignore_case = TRUE)) ~ "Relaxation",
+    str_detect(stress_coping_mechanisms, regex("travelling|nature", ignore_case = TRUE)) ~ "Adventure",
+    str_detect(stress_coping_mechanisms, regex("social media", ignore_case = TRUE)) ~ "Distraction",
+    str_detect(stress_coping_mechanisms, regex("exercise", ignore_case = TRUE)) ~ "Physical",
     TRUE ~ "Other"
   ))
 ```
@@ -91,9 +109,9 @@ data <- data %>%
 data <- data %>%
   mutate(
     at_risk = ifelse(
-      Mental.Stress.Level >= 7 &
-      Sleep.Duration..Hours.per.night. <= 5 &
-      Diet.Quality <= 2, 1, 0)
+      mental_stress_level >= 7 &
+      sleep_duration_hours_per_night <= 5 &
+      diet_quality <= 2, 1, 0)
   )
 ```
 
@@ -102,5 +120,177 @@ data <- data %>%
 ```{r}
 glimpse(data)
 summary(data)
+```
+
+# Visual analysis
+
+## Boxplot of Weekly Sleep Hours by Stress Category
+
+```{r}
+ggplot(data, aes(x = stress_category, y = sleep_duration_hours_per_night, fill = stress_category)) +
+  geom_boxplot(outlier.color = "red", alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Daily Sleep Duration Across Stress Categories",
+    x = "Stress Category",
+    y = "Sleep Duration (Hours per Night)",
+    fill = "Stress Category"
+  ) +
+  theme_minimal()
+```
+
+## GPA by Stress Category
+
+```{r}
+ggplot(data, aes(x = stress_category, y = academic_load_index_scaled, fill = stress_category)) +
+  geom_boxplot(outlier.color = "red", alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Academic Load Index (Scaled) by Stress Category",
+    x = "Stress Category",
+    y = "Academic Load Index (0–1)",
+    fill = "Stress Category"
+  ) +
+  theme_minimal()
+```
+
+## Coping Mechanism Type by Stress Category
+
+```{r}
+ggplot(data, aes(x = stress_category, fill = coping_type)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(palette = "Paired") +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    title = "Coping Mechanism Proportions by Stress Category",
+    x = "Stress Category",
+    y = "Proportion of Students",
+    fill = "Coping Type"
+  ) +
+  theme_minimal()
+```
+
+## Healthy Score by Stress Category
+
+```{r}
+risk_counts <- data %>%
+  mutate(risk_status = ifelse(at_risk == 1, "At-Risk", "Not At-Risk")) %>%
+  count(risk_status) %>%
+  mutate(
+    percent = round(n / sum(n) * 100, 1),
+    label = paste0(risk_status, ": ", percent, "%")
+  )
+
+# Final plot: At-Risk vs Not At-Risk students (horizontal bar)
+ggplot(risk_counts, aes(x = reorder(risk_status, n), y = n, fill = risk_status)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(
+    label = label,
+    hjust = ifelse(risk_status == "At-Risk", -0.2, 1.1)
+  ),
+  vjust = 0.5,
+  size = 5,
+  color = "black") +
+  scale_fill_manual(values = c("At-Risk" = "#66c2a5", "Not At-Risk" = "#fc8d62")) +
+  labs(
+    title = "Distribution of At-Risk vs Not At-Risk Students",
+    x = NULL,
+    y = "Number of Students",
+    fill = "Student Group"
+  ) +
+  coord_flip() +
+  expand_limits(y = max(risk_counts$n) * 1.2) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
+  )
+```
+
+## Social Media Usage Across Stress Levels
+
+```{r}
+ggplot(data, aes(x = social_media_usage_hours_per_day)) +
+  geom_histogram(binwidth = 1, fill = "#80b1d3", color = "white") +
+  facet_wrap(~ stress_category) +
+  labs(
+    title = "Social Media Usage by Stress Category",
+    x = "Hours per Day on Social Media",
+    y = "Number of Students"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data, aes(x = social_media_usage_hours_per_day, fill = stress_category)) +
+  geom_histogram(binwidth = 1, color = "white", alpha = 0.8) +
+  facet_wrap(~ stress_category, ncol = 1, strip.position = "top") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_x_continuous(breaks = seq(0, 10, 1)) +
+  labs(
+    title = "Daily Social Media Usage Across Stress Categories",
+    x = "Hours per Day on Social Media",
+    y = "Number of Students",
+    fill = "Stress Category"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+```{r}
+# Create social media usage buckets
+data <- data %>%
+  mutate(sm_usage_group = case_when(
+    social_media_usage_hours_per_day <= 2 ~ "0–2 hrs",
+    social_media_usage_hours_per_day <= 5 ~ "3–5 hrs",
+    TRUE ~ "6+ hrs"
+  ))
+
+# Plot grouped bar chart
+ggplot(data, aes(x = sm_usage_group, fill = stress_category)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Stress Category Distribution by Social Media Usage Group",
+    x = "Daily Social Media Usage",
+    y = "Number of Students",
+    fill = "Stress Category"
+  ) +
+  theme_minimal()
+```
+
+## Coping Type Proportions (Overall)
+
+```{r}
+# Count and calculate percentages
+coping_counts <- data %>%
+  count(coping_type) %>%
+  mutate(
+    percent = round(n / sum(n) * 100, 1),
+    label = paste0(coping_type, "\n", percent, "%")
+  )
+
+# Donut chart
+ggplot(coping_counts, aes(x = 2, y = n, fill = coping_type)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5), size = 4) +
+  xlim(0.5, 2.5) +  # Creates donut hole
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    title = "Overall Coping Strategy Usage",
+    fill = "Coping Type"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
+  )
 ```
 
