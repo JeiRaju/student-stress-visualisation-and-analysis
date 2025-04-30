@@ -1,0 +1,106 @@
+---
+title: "Visual analysis"
+author: "Jei Pratheesh"
+date: "2025-04-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(ggplot2)
+```
+
+# Load Dataset
+
+```{r}
+data <- read_csv("../data/Student_Mental_Stress_and_Coping_Mechanisms.csv")
+
+# Clean column names for ease of use
+colnames(data) <- make.names(colnames(data))
+```
+
+# Feature Engineering
+
+## 1. Weekly Aggregates
+
+```{r}
+data <- data %>%
+  mutate(
+    weekly_social_media_hours = Social.Media.Usage..Hours.per.day. * 7,
+    weekly_sleep_hours = Sleep.Duration..Hours.per.night. * 7,
+    weekly_exercise_hours = Physical.Exercise..Hours.per.week.
+  )
+```
+
+## 2. Academic Load Index (Raw and Normalised)
+
+```{r}
+data <- data %>%
+  mutate(
+    academic_load_index = Academic.Performance..GPA. * Study.Hours.Per.Week,
+    academic_load_index_scaled = rescale(academic_load_index, to = c(0, 1))
+  )
+```
+
+## 3. Stress Category (Based on Mental Stress Level)
+
+```{r}
+data <- data %>%
+  mutate(
+    stress_category = case_when(
+      Mental.Stress.Level <= 3 ~ "Low",
+      Mental.Stress.Level <= 6 ~ "Moderate",
+      Mental.Stress.Level >= 7 ~ "High",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+## 4. Healthy Lifestyle Score
+
+```{r}
+data <- data %>%
+  mutate(
+    healthy_score = as.integer(Sleep.Duration..Hours.per.night. >= 7) +
+                    as.integer(Physical.Exercise..Hours.per.week. >= 3) +
+                    as.integer(Diet.Quality >= 3)
+  )
+```
+
+## 5. Categorical Coping Type
+
+```{r}
+data <- data %>%
+  mutate(coping_type = case_when(
+    str_detect(Stress.Coping.Mechanisms, regex("meditation|breathing|yoga|alone", ignore_case = TRUE)) ~ "Emotional",
+    str_detect(Stress.Coping.Mechanisms, regex("talking|family|friends", ignore_case = TRUE)) ~ "Social",
+    str_detect(Stress.Coping.Mechanisms, regex("reading|drawing|writing", ignore_case = TRUE)) ~ "Creative",
+    str_detect(Stress.Coping.Mechanisms, regex("music|watching sports", ignore_case = TRUE)) ~ "Relaxation",
+    str_detect(Stress.Coping.Mechanisms, regex("travelling|nature", ignore_case = TRUE)) ~ "Adventure",
+    str_detect(Stress.Coping.Mechanisms, regex("social media", ignore_case = TRUE)) ~ "Distraction",
+    str_detect(Stress.Coping.Mechanisms, regex("exercise", ignore_case = TRUE)) ~ "Physical",
+    TRUE ~ "Other"
+  ))
+```
+
+## 6. At-Risk Flag
+
+```{r}
+data <- data %>%
+  mutate(
+    at_risk = ifelse(
+      Mental.Stress.Level >= 7 &
+      Sleep.Duration..Hours.per.night. <= 5 &
+      Diet.Quality <= 2, 1, 0)
+  )
+```
+
+## Feature Preview
+
+```{r}
+glimpse(data)
+summary(data)
+```
+
